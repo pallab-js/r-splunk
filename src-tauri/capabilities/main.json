@@ -1,0 +1,13 @@
+{
+  "identifier": "main-capability",
+  "description": "Main capability for the application",
+  "local": true,
+  "windows": ["main"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:default",
+    "core:window:default",
+    "shell:allow-open",
+    "dialog:allow-open"
+  ]
+}

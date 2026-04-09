@@ -1,0 +1,38 @@
+# ============================================================
+# R-Splunk .gitignore
+# Rust + Tauri + Next.js
+# ============================================================
+
+# --- Rust / Tauri -------------------------------------------
+src-tauri/target/
+src-tauri/gen/
+**/*.rs.bk
+
+# Tantivy index data (local-only, regenerates on ingest)
+index_data/
+*.tantivy
+
+# SQLite metadata
+*.db
+*.sqlite
+
+# --- Node.js / Next.js --------------------------------------
+node_modules/
+.next/
+out/
+.next/cache/
+*.tsbuildinfo
+
+# Environment files
+.env*.local
+
+# --- OS / IDE -----------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Test ---------------------------------------------------
+coverage/

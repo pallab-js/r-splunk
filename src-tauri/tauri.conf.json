@@ -1,0 +1,33 @@
+{
+  "productName": "r-splunk",
+  "version": "0.1.0",
+  "identifier": "com.r-splunk.app",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../out"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://localhost:*; font-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'",
+      "capabilities": [
+        "main-capability"
+      ]
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 800,
+        "resizable": true,
+        "title": "R-Splunk Log Analyzer",
+        "width": 1200
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
