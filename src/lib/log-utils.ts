@@ -1,28 +1,30 @@
 import React from 'react';
-import { AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Info, AlertTriangle, ShieldAlert, Terminal, MessageSquare } from 'lucide-react';
 
-// Get log level icon
 export const getLevelIcon = (level: string | null) => {
-  if (!level) return null;
+  if (!level) return React.createElement(MessageSquare, { className: "w-3.5 h-3.5" });
   const levelUpper = level.toUpperCase();
-  if (levelUpper === 'ERROR' || levelUpper === 'FATAL') {
-    return React.createElement(AlertCircle, { className: "w-4 h-4" });
-  }
-  if (levelUpper === 'WARN' || levelUpper === 'WARNING') {
-    return React.createElement(AlertTriangle, { className: "w-4 h-4" });
-  }
-  return React.createElement(Info, { className: "w-4 h-4" });
+  if (levelUpper === 'ERROR') return React.createElement(AlertCircle, { className: "w-3.5 h-3.5" });
+  if (levelUpper === 'FATAL') return React.createElement(ShieldAlert, { className: "w-3.5 h-3.5" });
+  if (levelUpper === 'WARN' || levelUpper === 'WARNING') return React.createElement(AlertTriangle, { className: "w-3.5 h-3.5" });
+  if (levelUpper === 'DEBUG' || levelUpper === 'TRACE') return React.createElement(Terminal, { className: "w-3.5 h-3.5" });
+  return React.createElement(Info, { className: "w-3.5 h-3.5" });
 };
 
-// Get log level color
 export const getLevelColor = (level: string | null) => {
-  if (!level) return 'text-stone';
+  if (!level) return 'text-mid-gray';
   const levelUpper = level.toUpperCase();
   if (levelUpper === 'ERROR' || levelUpper === 'FATAL') {
-    return 'text-black font-medium';
+    return 'text-crimson-4';
   }
   if (levelUpper === 'WARN' || levelUpper === 'WARNING') {
-    return 'text-mid-gray';
+    return 'text-yellow-A7';
   }
-  return 'text-silver';
+  if (levelUpper === 'INFO') {
+    return 'text-supabase-green';
+  }
+  if (levelUpper === 'DEBUG' || levelUpper === 'TRACE') {
+    return 'text-purple-5';
+  }
+  return 'text-light-gray';
 };

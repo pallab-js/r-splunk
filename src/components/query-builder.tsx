@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Plus, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button } from './ui';
+import { Plus, X, Search, ChevronDown, ChevronUp, Terminal } from 'lucide-react';
+import { Button, Card } from './ui';
 
 export type QueryOperator = 'AND' | 'OR' | 'NOT';
 export type QueryField = 'message' | 'level' | 'timestamp';
@@ -51,38 +51,26 @@ const MATCH_OPTIONS: Record<QueryField, { value: QueryMatch; label: string }[]> 
 const buildQueryString = (rules: QueryRule[]): string => {
   if (rules.length === 0) return '';
 
-  // Security: Sanitize query values to prevent injection attacks
   const sanitizeQueryValue = (value: string): string => {
-    // Escape special Tantivy query characters
     return value
       .replace(/[+\-&|!(){}[\]\^"~*?:\\/]/g, '\\$&')
-      .slice(0, 1000); // Limit query length to prevent DoS
+      .slice(0, 1000);
   };
 
   const buildRuleQuery = (rule: QueryRule): string => {
     const escapedValue = sanitizeQueryValue(rule.value);
-
     switch (rule.field) {
-      case 'level':
-        return `level:"${escapedValue}"`;
+      case 'level': return `level:"${escapedValue}"`;
       case 'message':
         switch (rule.match) {
-          case 'equals':
-            return `message:"${escapedValue}"`;
-          case 'startswith':
-            return `message:"${escapedValue}"`;
-          case 'endswith':
-            return `message:"${escapedValue}"`;
-          case 'regex':
-            // For regex, we pass through but still limit length
-            return `message:/${rule.value.slice(0, 500)}/`;
-          default:
-            return `message:"${escapedValue}"`;
+          case 'equals': return `message:"${escapedValue}"`;
+          case 'startswith': return `message:"${escapedValue}"`;
+          case 'endswith': return `message:"${escapedValue}"`;
+          case 'regex': return `message:/${rule.value.slice(0, 500)}/`;
+          default: return `message:"${escapedValue}"`;
         }
-      case 'timestamp':
-        return `timestamp:"${escapedValue}"`;
-      default:
-        return `"${escapedValue}"`;
+      case 'timestamp': return `timestamp:"${escapedValue}"`;
+      default: return `"${escapedValue}"`;
     }
   };
 
@@ -129,71 +117,72 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({ onSearch, isLoading 
     setRules([
       { id: generateId(), field: 'message', match: 'contains', value: '', operator: 'AND' },
     ]);
-    // onSearch('') already calls restoreOriginalLogs internally, no need to call onRestore
     onSearch('');
   }, [onSearch]);
 
   return (
-    <div className="border-b border-light-gray">
+    <Card className="border-border-dark overflow-hidden bg-near-black/20">
       {/* Toggle Button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-8 py-3 hover:bg-snow transition-colors"
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-near-black/40 transition-all duration-200"
       >
-        <div className="flex items-center gap-2 text-stone">
-          <Search className="w-4 h-4" />
-          <span className="text-sm font-medium">Advanced Query Builder</span>
+        <div className="flex items-center gap-3">
+          <Search className={`w-4 h-4 ${isExpanded ? 'text-supabase-green' : 'text-mid-gray'}`} />
+          <span className="text-xs font-mono uppercase tracking-technical text-off-white">Complex Query Mode</span>
         </div>
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-stone" />
+          <ChevronUp className="w-4 h-4 text-mid-gray" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-stone" />
+          <ChevronDown className="w-4 h-4 text-mid-gray" />
         )}
       </button>
 
       {/* Query Builder Content */}
       {isExpanded && (
-        <div className="px-8 py-6 bg-snow">
-          <div className="space-y-3">
+        <div className="px-6 py-6 border-t border-border-dark animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className="space-y-4">
             {rules.map((rule, index) => (
-              <div key={rule.id} className="flex items-center gap-3">
-                {/* Operator (hidden for first rule) */}
+              <div key={rule.id} className="flex items-center gap-3 group">
+                {/* Operator Selector */}
                 {index > 0 ? (
                   <select
                     value={rule.operator}
                     onChange={(e) => updateRule(rule.id, { operator: e.target.value as QueryOperator })}
-                    className="px-3 py-2 bg-white border border-light-gray rounded-pill 
-                             text-near-black text-sm focus:outline-none focus:ring-2 
-                             focus:ring-[rgba(59,130,246,0.5)]"
+                    className="w-20 px-2 py-1.5 bg-near-black border border-border-dark rounded-6 
+                             text-off-white text-[10px] uppercase font-mono tracking-wider focus:outline-none focus:ring-1 
+                             focus:ring-supabase-green transition-all"
                   >
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
                     <option value="NOT">NOT</option>
                   </select>
                 ) : (
-                  <div className="w-20" />
+                  <div className="w-20 flex justify-center">
+                    <Terminal className="w-3.5 h-3.5 text-mid-gray/40" />
+                  </div>
                 )}
 
                 {/* Field Selector */}
                 <select
                   value={rule.field}
                   onChange={(e) => updateRule(rule.id, { field: e.target.value as QueryField })}
-                  className="px-3 py-2 bg-white border border-light-gray rounded-pill 
-                           text-near-black text-sm focus:outline-none focus:ring-2 
-                           focus:ring-[rgba(59,130,246,0.5)]"
+                  className="px-3 py-1.5 bg-near-black border border-border-dark rounded-6 
+                           text-off-white text-xs focus:outline-none focus:ring-1 
+                           focus:ring-supabase-green transition-all"
                 >
                   <option value="message">Message</option>
                   <option value="level">Level</option>
                   <option value="timestamp">Timestamp</option>
                 </select>
 
-                {/* Match Type */}
+                {/* Match Type Selector */}
                 <select
                   value={rule.match}
                   onChange={(e) => updateRule(rule.id, { match: e.target.value as QueryMatch })}
-                  className="px-3 py-2 bg-white border border-light-gray rounded-pill 
-                           text-near-black text-sm focus:outline-none focus:ring-2 
-                           focus:ring-[rgba(59,130,246,0.5)]"
+                  className="px-3 py-1.5 bg-near-black border border-border-dark rounded-6 
+                           text-off-white text-xs focus:outline-none focus:ring-1 
+                           focus:ring-supabase-green transition-all"
                 >
                   {MATCH_OPTIONS[rule.field].map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -207,19 +196,19 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({ onSearch, isLoading 
                   type="text"
                   value={rule.value}
                   onChange={(e) => updateRule(rule.id, { value: e.target.value })}
-                  placeholder={`Enter ${FIELD_LABELS[rule.field].toLowerCase()}...`}
+                  placeholder={`Enter ${FIELD_LABELS[rule.field].toLowerCase()} filter...`}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  className="flex-1 px-4 py-2 bg-white border border-light-gray rounded-pill 
-                           text-near-black text-sm placeholder:text-silver
-                           focus:outline-none focus:ring-2 focus:ring-[rgba(59,130,246,0.5)]"
+                  className="flex-1 px-4 py-1.5 bg-near-black border border-border-dark rounded-pill 
+                           text-off-white text-xs placeholder:text-dark-gray
+                           focus:outline-none focus:ring-1 focus:ring-supabase-green transition-all"
                 />
 
                 {/* Remove Button */}
                 <button
                   onClick={() => removeRule(rule.id)}
                   disabled={rules.length === 1}
-                  className="p-2 text-stone hover:text-near-black transition-colors 
-                           disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-1.5 text-dark-gray hover:text-crimson-4 transition-colors 
+                           disabled:opacity-20 disabled:cursor-not-allowed"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -228,33 +217,36 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({ onSearch, isLoading 
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-between mt-6">
-            <Button onClick={addRule} variant="secondary" className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              <span>Add Rule</span>
+          <div className="flex items-center justify-between mt-8">
+            <Button onClick={addRule} variant="ghost" className="text-supabase-green text-xs flex items-center gap-2">
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Clause</span>
             </Button>
 
-            <div className="flex gap-3">
-              <Button onClick={handleClear} variant="secondary" disabled={isLoading}>
-                Clear
+            <div className="flex gap-4">
+              <Button onClick={handleClear} variant="ghost" className="text-xs" disabled={isLoading}>
+                Reset
               </Button>
-              <Button onClick={handleSearch} disabled={isLoading || rules.every((r) => !r.value.trim())}>
-                Search
+              <Button onClick={handleSearch} variant="primary" className="text-xs px-8" disabled={isLoading || rules.every((r) => !r.value.trim())}>
+                Execute Query
               </Button>
             </div>
           </div>
 
           {/* Generated Query Preview */}
           {rules.some((r) => r.value.trim()) && (
-            <div className="mt-4 p-3 bg-white border border-light-gray rounded-container">
-              <p className="text-xs text-stone mb-1">Generated Query:</p>
-              <code className="text-sm font-mono text-near-black">
+            <div className="mt-6 p-4 bg-near-black/40 border border-border-dark rounded-8 animate-in fade-in duration-500">
+              <div className="flex items-center gap-2 mb-2">
+                <Terminal className="w-3 h-3 text-mid-gray" />
+                <span className="text-[10px] uppercase font-mono tracking-technical text-mid-gray">Synthesized String</span>
+              </div>
+              <code className="text-xs font-mono text-supabase-green break-all">
                 {buildQueryString(rules) || '(empty)'}
               </code>
             </div>
           )}
         </div>
       )}
-    </div>
+    </Card>
   );
 };

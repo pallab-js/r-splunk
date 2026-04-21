@@ -1,35 +1,27 @@
 import React from 'react';
 
 interface LogStatsProps {
-  stats: {
-    total: number;
-    errors: number;
-    warnings: number;
-  };
+  stats: { total: number; errors: number; warnings: number };
 }
 
 export const LogStats: React.FC<LogStatsProps> = ({ stats }) => {
   return (
     <div>
-      <h3 className="font-display text-sm font-medium text-black mb-3">
+      <h3 className="font-mono text-[10px] uppercase tracking-technical text-mid-gray mb-3">
         Statistics
       </h3>
-      <div className="space-y-2">
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-stone">Total Logs</span>
-          <span className="text-sm font-medium text-near-black">{stats.total}</span>
+      <div className="space-y-3">
+        <div className="flex justify-between items-center p-2 rounded-8 bg-[#1a1a1a] border border-border-dark">
+          <span className="text-xs text-light-gray/60">Total Logs</span>
+          <span className="text-sm font-medium text-off-white">{stats.total.toLocaleString()}</span>
         </div>
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-stone">Errors</span>
-          <span className="text-sm font-medium text-near-black">
-            {stats.errors}
-          </span>
+        <div className="flex justify-between items-center p-2 rounded-8 bg-near-black border border-crimson-4/30">
+          <span className="text-xs text-crimson-4">Errors</span>
+          <span className="text-sm font-medium text-off-white">{stats.errors.toLocaleString()}</span>
         </div>
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-stone">Warnings</span>
-          <span className="text-sm font-medium text-near-black">
-            {stats.warnings}
-          </span>
+        <div className="flex justify-between items-center p-2 rounded-8 bg-near-black border border-yellow-A7/30">
+          <span className="text-xs text-yellow-A7">Warnings</span>
+          <span className="text-sm font-medium text-off-white">{stats.warnings.toLocaleString()}</span>
         </div>
       </div>
     </div>

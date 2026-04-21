@@ -1,10 +1,10 @@
 import React from 'react';
-import { Badge } from '@/components/ui';
-import { NetworkSources } from '@/components/network-sources';
-import { FileActions } from '@/components/file-actions';
-import { LogFilters } from '@/components/log-filters';
-import { LogStats } from '@/components/log-stats';
+import { Badge } from './ui';
 import { LogLevel } from '@/store';
+import { FileActions } from './file-actions';
+import { LogFilters } from './log-filters';
+import { LogStats } from './log-stats';
+import { NetworkSources } from './network-sources';
 
 interface SidebarProps {
   selectedFile: string | null;
@@ -38,30 +38,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onExportCsv,
 }) => {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
-        <h3 className="font-display text-sm font-medium text-black mb-3">File Information</h3>
+        <h3 className="font-mono text-[10px] uppercase tracking-technical text-mid-gray mb-3">
+          File Information
+        </h3>
         {selectedFile ? (
-          <div className="space-y-2">
-            <p className="text-xs font-mono text-stone break-all">{selectedFile}</p>
+          <div className="space-y-3">
+            <p className="text-xs font-mono text-light-gray/60 break-all leading-relaxed">
+              {selectedFile}
+            </p>
             <Badge>{logsCount} entries</Badge>
           </div>
         ) : (
-          <p className="text-sm text-silver">No file loaded</p>
+          <p className="text-sm text-dark-gray italic">No file loaded</p>
         )}
       </div>
 
       <FileActions 
-        onSelectFile={onSelectFile}
-        onClearLogs={onClearLogs}
-        onExport={onExport}
+        onSelectFile={onSelectFile} 
+        onClearLogs={onClearLogs} 
+        onExport={onExport} 
         onExportCsv={onExportCsv}
-        isLoading={isLoading}
-        hasLogs={logsCount > 0}
+        isLoading={isLoading} 
+        hasLogs={logsCount > 0} 
       />
 
       <LogFilters 
-        selectedLevel={selectedLevel}
+        selectedLevel={selectedLevel} 
         setSelectedLevel={setSelectedLevel}
         timeRangeStart={timeRangeStart}
         timeRangeEnd={timeRangeEnd}
@@ -70,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       <LogStats stats={stats} />
 
-      <div className="border-t border-light-gray pt-4">
+      <div className="border-t border-border-dark pt-8">
         <NetworkSources />
       </div>
     </div>

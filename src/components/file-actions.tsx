@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Download } from 'lucide-react';
+import { FileText, Download, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui';
 
 interface FileActionsProps {
@@ -21,43 +21,47 @@ export const FileActions: React.FC<FileActionsProps> = ({
 }) => {
   return (
     <div>
-      <h3 className="font-display text-sm font-medium text-black mb-3">
+      <h3 className="font-mono text-[10px] uppercase tracking-technical text-mid-gray mb-3">
         Quick Actions
       </h3>
-      <div className="space-y-2">
+      <div className="space-y-3">
         <Button
           onClick={onSelectFile}
           disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2"
+          variant="primary"
+          className="w-full"
         >
           <FileText className="w-4 h-4" />
           <span>Open File</span>
         </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            onClick={onExport}
+            variant="secondary"
+            disabled={!hasLogs}
+            className="w-full text-xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>JSON</span>
+          </Button>
+          <Button
+            onClick={onExportCsv}
+            variant="secondary"
+            disabled={!hasLogs}
+            className="w-full text-xs"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>CSV</span>
+          </Button>
+        </div>
         <Button
           onClick={onClearLogs}
-          variant="secondary"
+          variant="ghost"
           disabled={isLoading || !hasLogs}
-          className="w-full"
+          className="w-full text-xs text-dark-gray hover:text-off-white"
         >
-          Clear Logs
-        </Button>
-        <Button
-          onClick={onExport}
-          variant="secondary"
-          disabled={!hasLogs}
-          className="w-full flex items-center justify-center gap-2"
-        >
-          <Download className="w-4 h-4" />
-          <span>Export JSON</span>
-        </Button>
-        <Button
-          onClick={onExportCsv}
-          variant="secondary"
-          disabled={!hasLogs}
-          className="w-full flex items-center justify-center gap-2"
-        >
-          <Download className="w-4 h-4" />
-          <span>Export CSV</span>
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Clear All Logs</span>
         </Button>
       </div>
     </div>

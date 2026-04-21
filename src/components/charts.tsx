@@ -14,51 +14,41 @@ import {
   Pie,
   Cell,
 } from 'recharts';
+import { Card } from './ui';
 
 interface LogChartsProps {
   logs: LogEntry[];
 }
 
-// Grayscale color palette
-const GRAYSCALE_COLORS = {
-  black: '#000000',
-  nearBlack: '#262626',
-  midGray: '#525252',
-  stone: '#737373',
-  silver: '#a3a3a3',
-  borderLight: '#d4d4d4',
-  snow: '#fafafa',
+const SUPABASE_COLORS = {
+  green: '#3ecf8e',
+  dark: '#171717',
+  nearBlack: '#0f0f0f',
+  borderDark: '#2e2e2e',
+  midGray: '#898989',
+  offWhite: '#fafafa',
+  crimson: '#e93d82',
+  yellow: '#ffca16',
+  purple: '#8e4ec6',
+  blue: '#3e63dd',
 };
 
 export const LogCharts: React.FC<LogChartsProps> = ({ logs }) => {
-  // Prepare data for timeline chart (logs over time)
-  // Normalize timestamps to Date objects for proper grouping
   const timelineData = logs.reduce<Array<{ time: string; count: number }>>((acc, log) => {
     if (!log.timestamp) return acc;
-
-    // Try to parse the timestamp as a Date
     const date = new Date(log.timestamp);
-    if (isNaN(date.getTime())) return acc; // Skip unparseable timestamps
+    if (isNaN(date.getTime())) return acc;
 
-    // Group by minute: format as "YYYY-MM-DD HH:MM"
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const time = `${year}-${month}-${day} ${hours}:${minutes}`;
-
+    const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const existing = acc.find((item) => item.time === time);
     if (existing) {
       existing.count += 1;
     } else {
       acc.push({ time, count: 1 });
     }
-
     return acc;
   }, []);
 
-  // Prepare data for pie chart (log levels distribution)
   const levelCounts = logs.reduce<Record<string, number>>((acc, log) => {
     const level = log.level?.toUpperCase() || 'UNKNOWN';
     acc[level] = (acc[level] || 0) + 1;
@@ -68,55 +58,69 @@ export const LogCharts: React.FC<LogChartsProps> = ({ logs }) => {
   const pieData = Object.entries(levelCounts)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
-    .slice(0, 5); // Top 5 levels
+    .slice(0, 5);
 
-  // Assign grayscale colors to pie chart segments
-  const pieColors = Object.values(GRAYSCALE_COLORS).slice(0, 5);
+  const levelColors: Record<string, string> = {
+    ERROR: SUPABASE_COLORS.crimson,
+    FATAL: SUPABASE_COLORS.crimson,
+    WARN: SUPABASE_COLORS.yellow,
+    WARNING: SUPABASE_COLORS.yellow,
+    INFO: SUPABASE_GREEN,
+    DEBUG: SUPABASE_COLORS.purple,
+    UNKNOWN: SUPABASE_COLORS.midGray,
+  };
 
-  if (logs.length === 0) {
-    return null;
-  }
+  const getLevelColor = (name: string) => levelColors[name] || SUPABASE_COLORS.blue;
+  const SUPABASE_GREEN = SUPABASE_COLORS.green;
+
+  if (logs.length === 0) return null;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-      {/* Timeline Chart */}
-      <div className="bg-white border border-light-gray rounded-container p-6">
-        <h3 className="font-display text-lg font-medium text-black mb-4">
-          Log Timeline
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <Card className="p-8 bg-near-black/20 border-border-dark">
+        <h3 className="font-mono text-[10px] uppercase tracking-technical text-mid-gray mb-6">
+          Traffic Intensity
         </h3>
         <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={timelineData.slice(-20)}>
-            <CartesianGrid strokeDasharray="3 3" stroke={GRAYSCALE_COLORS.borderLight} />
+          <BarChart data={timelineData.slice(-30)}>
+            <CartesianGrid strokeDasharray="3 3" stroke={SUPABASE_COLORS.borderDark} vertical={false} />
             <XAxis
               dataKey="time"
-              stroke={GRAYSCALE_COLORS.stone}
-              tick={{ fill: GRAYSCALE_COLORS.stone, fontSize: 12 }}
+              stroke={SUPABASE_COLORS.midGray}
+              tick={{ fill: SUPABASE_COLORS.midGray, fontSize: 10, fontFamily: 'ui-monospace' }}
+              axisLine={false}
+              tickLine={false}
             />
             <YAxis
-              stroke={GRAYSCALE_COLORS.stone}
-              tick={{ fill: GRAYSCALE_COLORS.stone, fontSize: 12 }}
+              stroke={SUPABASE_COLORS.midGray}
+              tick={{ fill: SUPABASE_COLORS.midGray, fontSize: 10, fontFamily: 'ui-monospace' }}
+              axisLine={false}
+              tickLine={false}
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: GRAYSCALE_COLORS.snow,
-                border: `1px solid ${GRAYSCALE_COLORS.borderLight}`,
-                borderRadius: '12px',
-                boxShadow: 'none',
+                backgroundColor: SUPABASE_COLORS.nearBlack,
+                border: `1px solid ${SUPABASE_COLORS.borderDark}`,
+                borderRadius: '8px',
+                color: SUPABASE_COLORS.offWhite,
+                fontSize: '12px',
+                fontFamily: 'ui-monospace',
               }}
+              cursor={{ fill: 'rgba(62, 207, 142, 0.05)' }}
             />
             <Bar
               dataKey="count"
-              fill={GRAYSCALE_COLORS.nearBlack}
-              radius={[4, 4, 0, 0]}
+              fill={SUPABASE_GREEN}
+              radius={[2, 2, 0, 0]}
+              barSize={20}
             />
           </BarChart>
         </ResponsiveContainer>
-      </div>
+      </Card>
 
-      {/* Pie Chart */}
-      <div className="bg-white border border-light-gray rounded-container p-6">
-        <h3 className="font-display text-lg font-medium text-black mb-4">
-          Log Levels
+      <Card className="p-8 bg-near-black/20 border-border-dark">
+        <h3 className="font-mono text-[10px] uppercase tracking-technical text-mid-gray mb-6">
+          Severity Distribution
         </h3>
         <ResponsiveContainer width="100%" height={250}>
           <PieChart>
@@ -124,27 +128,29 @@ export const LogCharts: React.FC<LogChartsProps> = ({ logs }) => {
               data={pieData}
               cx="50%"
               cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+              innerRadius={60}
               outerRadius={80}
-              fill="#888888"
+              paddingAngle={5}
               dataKey="value"
+              stroke="none"
             >
-              {pieData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
+              {pieData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={getLevelColor(entry.name)} />
               ))}
             </Pie>
             <Tooltip
               contentStyle={{
-                backgroundColor: GRAYSCALE_COLORS.snow,
-                border: `1px solid ${GRAYSCALE_COLORS.borderLight}`,
-                borderRadius: '12px',
-                boxShadow: 'none',
+                backgroundColor: SUPABASE_COLORS.nearBlack,
+                border: `1px solid ${SUPABASE_COLORS.borderDark}`,
+                borderRadius: '8px',
+                color: SUPABASE_COLORS.offWhite,
+                fontSize: '12px',
+                fontFamily: 'ui-monospace',
               }}
             />
           </PieChart>
         </ResponsiveContainer>
-      </div>
+      </Card>
     </div>
   );
 };

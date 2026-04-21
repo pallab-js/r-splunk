@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { LogEntry } from '@/lib/tauri';
 import { LogLevel } from '@/store';
 import { getLevelIcon, getLevelColor } from '@/lib/log-utils';
-import { AlertCircle } from 'lucide-react';
+import { FileText, Clock, Server } from 'lucide-react';
 
 interface VirtualLogTableProps {
   logs: LogEntry[];
@@ -17,28 +17,17 @@ interface VirtualLogTableProps {
 const matchesLevel = (logLevel: string | null, selectedLevel: LogLevel): boolean => {
   if (selectedLevel === 'ALL') return true;
   if (!logLevel) return false;
-  const logUpper = logLevel.toUpperCase();
-  if (selectedLevel === 'WARN') {
-    return logUpper === 'WARN' || logUpper === 'WARNING';
-  }
-  return logUpper === selectedLevel;
+  const level = logLevel.toUpperCase();
+  if (selectedLevel === 'WARN' && (level === 'WARN' || level === 'WARNING')) return true;
+  return level === selectedLevel;
 };
 
 const matchesTimeRange = (timestamp: string | null, start: string | null, end: string | null): boolean => {
-  if (!timestamp) return true;
-
-  // Normalize timestamp to Date object for proper comparison
+  if (!start && !end) return true;
+  if (!timestamp) return false;
   const tsDate = new Date(timestamp);
-  if (isNaN(tsDate.getTime())) return true; // Can't parse, include anyway
-
-  if (start) {
-    const startDate = new Date(start);
-    if (!isNaN(startDate.getTime()) && tsDate < startDate) return false;
-  }
-  if (end) {
-    const endDate = new Date(end);
-    if (!isNaN(endDate.getTime()) && tsDate > endDate) return false;
-  }
+  if (start && tsDate < new Date(start)) return false;
+  if (end && tsDate > new Date(end)) return false;
   return true;
 };
 
@@ -48,110 +37,91 @@ export const VirtualLogTable: React.FC<VirtualLogTableProps> = ({
   timeRangeStart,
   timeRangeEnd,
 }) => {
-  const parentRef = useRef<HTMLDivElement>(null);
-
-  // Filter logs based on level and time range
   const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
-      const levelMatch = matchesLevel(log.level, selectedLevel);
-      const timeMatch = matchesTimeRange(log.timestamp, timeRangeStart, timeRangeEnd);
-      return levelMatch && timeMatch;
-    });
+    return logs.filter(
+      (log) =>
+        matchesLevel(log.level, selectedLevel) &&
+        matchesTimeRange(log.timestamp, timeRangeStart, timeRangeEnd)
+    );
   }, [logs, selectedLevel, timeRangeStart, timeRangeEnd]);
+
+  const parentRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
     count: filteredLogs.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 64,
-    overscan: 5,
+    estimateSize: () => 40,
+    overscan: 10,
   });
 
-  if (filteredLogs.length === 0 && logs.length > 0) {
-    return (
-      <div className="px-6 py-22 text-center text-stone">
-        <AlertCircle className="w-12 h-12 mx-auto mb-4 text-silver" />
-        <p className="text-lg font-display">No logs match the current filters</p>
-        <p className="text-sm mt-2">Try adjusting your filter criteria</p>
-      </div>
-    );
-  }
-
-  if (logs.length === 0) {
-    return null;
-  }
-
   return (
-    <div>
-      {/* Table Header - Fixed */}
-      <div className="grid grid-cols-12 gap-4 px-6 py-3 bg-snow border-b border-light-gray text-stone text-xs font-medium sticky top-0 z-10">
-        <div className="col-span-2">Timestamp</div>
-        <div className="col-span-1">Level</div>
-        <div className="col-span-5">Message</div>
-        <div className="col-span-2">IP / Status</div>
-        <div className="col-span-2">Source</div>
-      </div>
-
-      {/* Virtualized Table Body */}
+    <div
+      ref={parentRef}
+      className="h-[600px] overflow-auto rounded-8 bg-near-black/50 scrollbar-thin scrollbar-thumb-border-dark"
+    >
       <div
-        ref={parentRef}
-        className="divide-y divide-light-gray"
         style={{
-          height: '600px',
-          overflow: 'auto',
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
         }}
       >
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            width: '100%',
-            position: 'relative',
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const log = filteredLogs[virtualRow.index];
-            return (
-              <div
-                key={virtualRow.index}
-                className="grid grid-cols-12 gap-4 px-6 hover:bg-snow transition-colors absolute left-0 w-full"
-                style={{
-                  height: `${virtualRow.size}px`,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                <div className="col-span-2 font-mono text-xs text-stone truncate">
-                  {log.timestamp || '-'}
-                </div>
-                <div className="col-span-1">
-                  <div className={`flex items-center gap-1 ${getLevelColor(log.level)}`}>
-                    {getLevelIcon(log.level)}
-                    <span className="text-xs truncate">{log.level || '-'}</span>
-                  </div>
-                </div>
-                <div className="col-span-5 font-mono text-xs text-near-black break-words">
-                  {log.message}
-                  {log.request_path && (
-                    <span className="ml-2 text-silver">[{log.request_path}]</span>
-                  )}
-                </div>
-                <div className="col-span-2 font-mono text-xs text-silver">
-                  {log.source_ip && (
-                    <span className="block">{log.source_ip}</span>
-                  )}
-                  {log.status_code && (
-                    <span className={`block ${log.status_code.startsWith('5') ? 'text-black font-medium' : log.status_code.startsWith('4') ? 'text-mid-gray' : 'text-stone'}`}>
-                      {log.status_code}
-                    </span>
-                  )}
-                  {!log.source_ip && !log.status_code && `#${log.line_number}`}
-                </div>
-                <div className="col-span-2 font-mono text-xs text-silver truncate">
-                  {log.source || `#${log.line_number}`}
-                </div>
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const log = filteredLogs[virtualRow.index];
+          const levelColor = getLevelColor(log.level);
+          
+          return (
+            <div
+              key={virtualRow.index}
+              className="absolute top-0 left-0 w-full border-b border-border-dark/50 hover:bg-dark-border/30 transition-colors group px-4 py-2 flex items-center gap-4 text-xs font-mono"
+              style={{
+                height: '40px',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div className="w-8 text-dark-gray text-[10px] text-right shrink-0">
+                {log.line_number}
               </div>
-            );
-          })}
-        </div>
+              
+              <div className="w-40 flex items-center gap-2 text-mid-gray shrink-0">
+                <Clock className="w-3 h-3 opacity-50" />
+                <span className="truncate">{log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '--:--:--'}</span>
+              </div>
+              
+              <div className={`w-20 flex items-center gap-1.5 uppercase tracking-wider font-bold shrink-0 ${levelColor}`}>
+                {getLevelIcon(log.level)}
+                <span>{log.level || 'NONE'}</span>
+              </div>
+              
+              <div className="flex-1 text-off-white truncate group-hover:text-supabase-green transition-colors">
+                {log.message}
+              </div>
+
+              {log.source_ip && (
+                <div className="w-32 flex items-center gap-2 text-mid-gray shrink-0">
+                  <Server className="w-3 h-3 opacity-50" />
+                  <span className="truncate">{log.source_ip}</span>
+                </div>
+              )}
+
+              {log.source_file && (
+                <div className="w-40 flex items-center gap-2 text-dark-gray shrink-0 group-hover:text-mid-gray">
+                  <FileText className="w-3 h-3 opacity-50" />
+                  <span className="truncate max-w-[140px]" title={log.source_file}>
+                    {log.source_file.split('/').pop()}
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
+      {filteredLogs.length === 0 && (
+        <div className="flex flex-col items-center justify-center h-full text-dark-gray py-20">
+          <p className="font-mono text-[10px] uppercase tracking-widest mb-2">Null Result</p>
+          <p className="text-xs">No logs match current filters</p>
+        </div>
+      )}
     </div>
   );
 };

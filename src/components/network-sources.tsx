@@ -1,9 +1,7 @@
-'use client';
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Plus, Trash2, Play, Wifi, WifiOff } from 'lucide-react';
-import { Button } from './ui';
+import { Plus, Trash2, Play, Wifi, WifiOff, Globe } from 'lucide-react';
+import { Button, Input, Badge } from './ui';
 
 interface NetworkSource {
   id: string;
@@ -17,10 +15,10 @@ interface NetworkSource {
 
 export const NetworkSources: React.FC = () => {
   const [sources, setSources] = useState<NetworkSource[]>([]);
-  const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newPort, setNewPort] = useState(9999);
   const [newTls, setNewTls] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
 
   const loadSources = useCallback(async () => {
     try {
@@ -32,29 +30,19 @@ export const NetworkSources: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSources();
   }, [loadSources]);
 
   const addSource = async () => {
     if (!newName.trim()) return;
-
-    // Security: Validate port range
-    if (newPort < 1024 || newPort > 65535) {
-      console.error('Port must be between 1024 and 65535');
-      return;
-    }
-
     try {
       await invoke('add_network_source', {
         name: newName,
         port: newPort,
-        use_tls: newTls,
+        useTls: newTls,
       });
       setNewName('');
-      setNewPort(9999);
-      setNewTls(false);
-      setShowForm(false);
+      setIsAdding(false);
       await loadSources();
     } catch (e) {
       console.error('Failed to add source:', e);
@@ -79,118 +67,113 @@ export const NetworkSources: React.FC = () => {
     }
   };
 
-  const getStatusIcon = (status: NetworkSource['status']) => {
-    if (status === 'Connected') return <Wifi className="w-4 h-4 text-black" />;
-    if (status === 'Connecting') return <WifiOff className="w-4 h-4 text-stone animate-pulse" />;
-    if (typeof status === 'object' && 'Error' in status) {
-      return <WifiOff className="w-4 h-4 text-red-500" />;
+  const stopServer = async (id: string) => {
+    try {
+      await invoke('stop_network_server', { id });
+      await loadSources();
+    } catch {
+      // Ignore error
     }
-    return <WifiOff className="w-4 h-4 text-silver" />;
+  };
+
+  const getStatusDisplay = (status: NetworkSource['status']) => {
+    if (status === 'Connected') return <Badge className="bg-supabase-green/10 text-supabase-green border-supabase-green/20">Active</Badge>;
+    if (status === 'Connecting') return <Badge className="bg-yellow-A7/10 text-yellow-A7 border-yellow-A7/20">Pending</Badge>;
+    if (typeof status === 'object' && 'Error' in status) return <Badge className="bg-crimson-4/10 text-crimson-4 border-crimson-4/20">Error</Badge>;
+    return <Badge className="bg-border-dark text-mid-gray border-border-dark">Idle</Badge>;
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-sm font-medium text-black">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="font-mono text-[10px] uppercase tracking-technical text-mid-gray">
           Network Sources
         </h3>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="p-1 text-stone hover:text-near-black transition-colors"
+        <Button 
+          variant="ghost" 
+          onClick={() => setIsAdding(!isAdding)} 
+          className="p-1 h-auto rounded-6 text-supabase-green"
         >
           <Plus className="w-4 h-4" />
-        </button>
+        </Button>
       </div>
 
-      {showForm && (
-        <div className="p-3 bg-white border border-light-gray rounded-container space-y-2">
-          <input
-            type="text"
+      {isAdding && (
+        <div className="p-3 bg-dark border border-border-dark rounded-8 space-y-3 mb-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <Input
+            placeholder="Source Name"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Source name"
-            className="w-full px-3 py-2 bg-snow border border-light-gray rounded-pill 
-                     text-near-black text-sm focus:outline-none focus:ring-2 
-                     focus:ring-[rgba(59,130,246,0.5)]"
+            className="py-1.5 px-3 text-xs"
           />
-          <input
-            type="number"
-            value={newPort}
-            onChange={(e) => setNewPort(Number(e.target.value))}
-            placeholder="Port (1024-65535)"
-            min={1024}
-            max={65535}
-            className="w-full px-3 py-2 bg-snow border border-light-gray rounded-pill
-                     text-near-black text-sm focus:outline-none focus:ring-2
-                     focus:ring-[rgba(59,130,246,0.5)]"
-          />
-          <label className="flex items-center gap-2 text-xs text-stone">
-            <input
-              type="checkbox"
-              checked={newTls}
-              onChange={(e) => setNewTls(e.target.checked)}
-            />
-            Enable TLS
-          </label>
           <div className="flex gap-2">
-            <Button onClick={addSource} className="flex-1 text-xs py-2">
-              Add
-            </Button>
-            <Button
-              onClick={() => setShowForm(false)}
-              variant="secondary"
-              className="flex-1 text-xs py-2"
-            >
-              Cancel
-            </Button>
+            <Input
+              type="number"
+              placeholder="Port"
+              value={newPort}
+              onChange={(e) => setNewPort(parseInt(e.target.value))}
+              className="py-1.5 px-3 text-xs flex-1"
+            />
+            <label className="flex items-center gap-2 cursor-pointer bg-near-black px-3 py-1.5 rounded-pill border border-border-dark transition-colors hover:border-mid-border">
+              <input
+                type="checkbox"
+                checked={newTls}
+                onChange={(e) => setNewTls(e.target.checked)}
+                className="accent-supabase-green"
+              />
+              <span className="text-[10px] text-light-gray/60 uppercase font-mono tracking-wider">TLS</span>
+            </label>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={addSource} className="flex-1 text-xs py-1.5">Add</Button>
+            <Button onClick={() => setIsAdding(false)} variant="ghost" className="flex-1 text-xs py-1.5">Cancel</Button>
           </div>
         </div>
       )}
 
-      {sources.map((source) => (
-        <div
-          key={source.id}
-          className="flex items-center justify-between p-3 bg-white border border-light-gray rounded-container"
-        >
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            {getStatusIcon(source.status)}
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-near-black truncate">
-                {source.name}
-              </p>
-              <p className="text-xs text-stone">
-                {source.address}:{source.port}
-                {source.use_tls && ' (TLS)'}
-              </p>
-              {typeof source.status === 'object' && 'Error' in source.status && (
-                <p className="text-xs text-red-500 mt-1 truncate">
-                  {source.status.Error}
-                </p>
-              )}
+      <div className="space-y-2">
+        {sources.map((source) => (
+          <div
+            key={source.id}
+            className="p-3 bg-dark border border-border-dark rounded-8 group transition-all duration-200 hover:border-mid-border"
+          >
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex items-center gap-2">
+                <Globe className={`w-3.5 h-3.5 ${source.status === 'Connected' ? 'text-supabase-green' : 'text-mid-gray'}`} />
+                <span className="text-xs font-medium text-off-white">{source.name}</span>
+              </div>
+              <button
+                onClick={() => removeSource(source.id)}
+                className="text-dark-gray hover:text-crimson-4 opacity-0 group-hover:opacity-100 transition-all duration-200"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            
+            <div className="flex justify-between items-center">
+              <div className="text-[10px] font-mono text-mid-gray">
+                {source.address}:{source.port} {source.use_tls && '(TLS)'}
+              </div>
+              <div className="flex items-center gap-2">
+                {getStatusDisplay(source.status)}
+                <button
+                  onClick={() => source.status === 'Connected' ? stopServer(source.id) : startServer(source.id)}
+                  className={`p-1 rounded-6 transition-all duration-200 ${
+                    source.status === 'Connected' 
+                    ? 'text-crimson-4 hover:bg-crimson-4/10' 
+                    : 'text-supabase-green hover:bg-supabase-green/10'
+                  }`}
+                >
+                  {source.status === 'Connected' ? <WifiOff className="w-4 h-4" /> : <Wifi className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            {!source.enabled && (
-              <button
-                onClick={() => startServer(source.id)}
-                className="p-1 text-stone hover:text-near-black transition-colors"
-              >
-                <Play className="w-4 h-4" />
-              </button>
-            )}
-            <button
-              onClick={() => removeSource(source.id)}
-              className="p-1 text-stone hover:text-near-black transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      ))}
-
-      {sources.length === 0 && !showForm && (
-        <p className="text-xs text-silver text-center">No network sources</p>
-      )}
+        ))}
+        {sources.length === 0 && !isAdding && (
+          <p className="text-[10px] text-dark-gray italic text-center py-2 uppercase tracking-widest">No Sources</p>
+        )}
+      </div>
     </div>
   );
 };
