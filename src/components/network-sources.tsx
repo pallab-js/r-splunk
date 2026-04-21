@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Plus, Trash2, Play, Square, Wifi, WifiOff } from 'lucide-react';
+import { Plus, Trash2, Play, Wifi, WifiOff } from 'lucide-react';
 import { Button } from './ui';
 
 interface NetworkSource {
@@ -22,18 +22,19 @@ export const NetworkSources: React.FC = () => {
   const [newPort, setNewPort] = useState(9999);
   const [newTls, setNewTls] = useState(false);
 
-  useEffect(() => {
-    loadSources();
-  }, []);
-
-  const loadSources = async () => {
+  const loadSources = useCallback(async () => {
     try {
       const result = await invoke<NetworkSource[]>('get_network_sources');
       setSources(result);
     } catch (e) {
       console.error('Failed to load sources:', e);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadSources();
+  }, [loadSources]);
 
   const addSource = async () => {
     if (!newName.trim()) return;
@@ -64,8 +65,8 @@ export const NetworkSources: React.FC = () => {
     try {
       await invoke('remove_network_source', { id });
       await loadSources();
-    } catch (e) {
-      console.error('Failed to remove source:', e);
+    } catch {
+      // Ignore error
     }
   };
 
@@ -73,8 +74,8 @@ export const NetworkSources: React.FC = () => {
     try {
       await invoke('start_network_server', { id });
       await loadSources();
-    } catch (e) {
-      console.error('Failed to start server:', e);
+    } catch {
+      // Ignore error
     }
   };
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { useAppStore, LogLevel } from '@/store';
+import { useAppStore } from '@/store';
 
 describe('Zustand Store', () => {
   it('has initial state', () => {

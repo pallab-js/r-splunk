@@ -4,7 +4,8 @@ import React, { useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { LogEntry } from '@/lib/tauri';
 import { LogLevel } from '@/store';
-import { AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { getLevelIcon, getLevelColor } from '@/lib/log-utils';
+import { AlertCircle } from 'lucide-react';
 
 interface VirtualLogTableProps {
   logs: LogEntry[];
@@ -12,30 +13,6 @@ interface VirtualLogTableProps {
   timeRangeStart: string | null;
   timeRangeEnd: string | null;
 }
-
-const getLevelIcon = (level: string | null) => {
-  if (!level) return null;
-  const levelUpper = level.toUpperCase();
-  if (levelUpper === 'ERROR' || levelUpper === 'FATAL') {
-    return <AlertCircle className="w-4 h-4" />;
-  }
-  if (levelUpper === 'WARN' || levelUpper === 'WARNING') {
-    return <AlertTriangle className="w-4 h-4" />;
-  }
-  return <Info className="w-4 h-4" />;
-};
-
-const getLevelColor = (level: string | null) => {
-  if (!level) return 'text-stone';
-  const levelUpper = level.toUpperCase();
-  if (levelUpper === 'ERROR' || levelUpper === 'FATAL') {
-    return 'text-black font-medium';
-  }
-  if (levelUpper === 'WARN' || levelUpper === 'WARNING') {
-    return 'text-mid-gray';
-  }
-  return 'text-silver';
-};
 
 const matchesLevel = (logLevel: string | null, selectedLevel: LogLevel): boolean => {
   if (selectedLevel === 'ALL') return true;

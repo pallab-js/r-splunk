@@ -10,7 +10,6 @@ tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
 tauri = { version = "2.0", features = [] }
-tauri-plugin-shell = "2.0"
 tauri-plugin-dialog = "2.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -19,12 +18,9 @@ anyhow = "1.0"
 thiserror = "1.0"
 tantivy = "0.22"
 regex = "1.0"
-rusqlite = { version = "0.32", features = ["bundled"] }
-notify = "6.0"
 chrono = "0.4"
-lazy_static = "1.5.0"
 tokio-rustls = "0.26.4"
-rustls-pemfile = "2.2.0"
+rustls-pki-types = { version = "1.14", features = ["alloc"] }
 rcgen = "0.14.7"
 uuid = { version = "1.23.0", features = ["v4"] }
 

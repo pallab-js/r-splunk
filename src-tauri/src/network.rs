@@ -1,15 +1,40 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
-use tauri::{Emitter, State};
+use std::sync::{Arc, Mutex, LazyLock, atomic::{AtomicUsize, Ordering}};
+use tauri::{Emitter, State, Manager};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls;
 
 // Global connection counter for rate limiting
-lazy_static::lazy_static! {
-    static ref ACTIVE_CONNECTIONS: AtomicUsize = AtomicUsize::new(0);
-    static ref MAX_CONNECTIONS: usize = 100; // Limit concurrent connections
+static ACTIVE_CONNECTIONS: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
+static MAX_CONNECTIONS: LazyLock<usize> = LazyLock::new(|| 100); // Limit concurrent connections
+
+struct ConnectionGuard;
+
+impl ConnectionGuard {
+    fn new() -> Option<Self> {
+        ACTIVE_CONNECTIONS.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |curr| {
+            if curr < *MAX_CONNECTIONS {
+                Some(curr + 1)
+            } else {
+                None
+            }
+        }).ok().map(|_| ConnectionGuard)
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+use tokio::task::AbortHandle;
+use std::collections::HashMap;
+
+pub struct ServerState {
+    pub handles: Mutex<HashMap<String, AbortHandle>>,
 }
 
 /// Network log source configuration
@@ -73,19 +98,19 @@ pub async fn start_log_server(
     let addr = format!("127.0.0.1:{}", port);
 
     if use_tls {
-        let (cert, key) = generate_self_signed_cert()?;
+        let (cert_pem, key_pem) = generate_self_signed_cert()?;
 
-        let cert = rustls_pemfile::certs(&mut cert.as_slice())
-            .collect::<Result<Vec<_>, _>>()
+        use rustls_pki_types::pem::PemObject;
+        
+        let cert = rustls_pki_types::CertificateDer::from_pem_slice(&cert_pem)
             .map_err(|e| format!("Failed to parse cert: {}", e))?;
 
-        let key = rustls_pemfile::private_key(&mut key.as_slice())
-            .map_err(|e| format!("Failed to parse key: {}", e))?
-            .ok_or("No private key found")?;
+        let key = rustls_pki_types::PrivateKeyDer::from_pem_slice(&key_pem)
+            .map_err(|e| format!("Failed to parse key: {}", e))?;
 
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
-            .with_single_cert(cert, key)
+            .with_single_cert(vec![cert], key)
             .map_err(|e| format!("Failed to build TLS config: {}", e))?;
 
         let acceptor = TlsAcceptor::from(Arc::new(config));
@@ -104,21 +129,22 @@ pub async fn start_log_server(
                 .map_err(|e| format!("Failed to accept: {}", e))?;
 
             // Security: Enforce connection limit to prevent DoS
-            let current_connections = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
-            if current_connections >= *MAX_CONNECTIONS {
-                eprintln!("Connection limit reached ({}), rejecting connection from {}", current_connections, peer_addr);
-                continue;
-            }
+            let guard = match ConnectionGuard::new() {
+                Some(g) => g,
+                None => {
+                    eprintln!("Connection limit reached, rejecting connection from {}", peer_addr);
+                    continue;
+                }
+            };
 
             let acceptor = acceptor.clone();
             let app = app_handle.clone();
 
             tokio::spawn(async move {
+                let _guard = guard; // Moved into task, will drop on completion
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
-                        ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
                         handle_log_connection(tls_stream, peer_addr, app).await;
-                        ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
                     }
                     Err(e) => {
                         eprintln!("TLS handshake failed: {}", e);
@@ -142,17 +168,18 @@ pub async fn start_log_server(
                 .map_err(|e| format!("Failed to accept: {}", e))?;
 
             // Security: Enforce connection limit to prevent DoS
-            let current_connections = ACTIVE_CONNECTIONS.load(Ordering::Relaxed);
-            if current_connections >= *MAX_CONNECTIONS {
-                eprintln!("Connection limit reached ({}), rejecting connection from {}", current_connections, peer_addr);
-                continue;
-            }
+            let guard = match ConnectionGuard::new() {
+                Some(g) => g,
+                None => {
+                    eprintln!("Connection limit reached, rejecting connection from {}", peer_addr);
+                    continue;
+                }
+            };
 
             let app = app_handle.clone();
             tokio::spawn(async move {
-                ACTIVE_CONNECTIONS.fetch_add(1, Ordering::Relaxed);
+                let _guard = guard; // Moved into task, will drop on completion
                 handle_log_connection(stream, peer_addr, app).await;
-                ACTIVE_CONNECTIONS.fetch_sub(1, Ordering::Relaxed);
             });
         }
     }
@@ -219,7 +246,7 @@ pub fn add_network_source(
     let source = NetworkSource {
         id: id.clone(),
         name,
-        address: "0.0.0.0".to_string(),
+        address: "127.0.0.1".to_string(),
         port,
         enabled: false,
         use_tls,
@@ -261,7 +288,16 @@ pub async fn start_network_server(
     id: String,
     app_handle: tauri::AppHandle,
     sources: State<'_, Mutex<Vec<NetworkSource>>>,
+    server_state: State<'_, ServerState>,
 ) -> Result<String, String> {
+    // Check if already running
+    {
+        let handles = server_state.handles.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if handles.contains_key(&id) {
+            return Err("Server already running".to_string());
+        }
+    }
+
     let source = {
         let mut sources = sources
             .lock()
@@ -270,18 +306,64 @@ pub async fn start_network_server(
             .iter_mut()
             .find(|s| s.id == id)
             .ok_or("Source not found")?;
+        
         source.enabled = true;
         source.status = ConnectionStatus::Connecting;
         (source.port, source.use_tls)
     };
 
     let (port, use_tls) = source;
+    let id_clone = id.clone();
+    let app_clone = app_handle.clone();
 
-    tokio::spawn(async move {
-        if let Err(e) = start_log_server(port, use_tls, app_handle).await {
+    let task = tokio::spawn(async move {
+        // Update status to Connected when server starts
+        {
+            let sources_state = app_clone.state::<Mutex<Vec<NetworkSource>>>();
+            let lock_result = sources_state.lock();
+            if let Ok(mut sources) = lock_result {
+                if let Some(s) = sources.iter_mut().find(|s| s.id == id_clone) {
+                    s.status = ConnectionStatus::Connected;
+                }
+            }
+        }
+
+        if let Err(e) = start_log_server(port, use_tls, app_clone).await {
             eprintln!("Server error: {}", e);
         }
     });
 
+    server_state.handles.lock().map_err(|e| format!("Lock error: {}", e))?
+        .insert(id.clone(), task.abort_handle());
+
     Ok(format!("Server starting on port {}", port))
+}
+
+#[tauri::command]
+pub fn stop_network_server(
+    id: String,
+    sources: State<'_, Mutex<Vec<NetworkSource>>>,
+    server_state: State<'_, ServerState>,
+) -> Result<(), String> {
+    // Abort the task
+    {
+        let mut handles = server_state.handles.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if let Some(handle) = handles.remove(&id) {
+            handle.abort();
+        }
+    }
+
+    // Update status
+    let mut sources = sources
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    let source = sources
+        .iter_mut()
+        .find(|s| s.id == id)
+        .ok_or("Source not found")?;
+    
+    source.enabled = false;
+    source.status = ConnectionStatus::Disconnected;
+
+    Ok(())
 }

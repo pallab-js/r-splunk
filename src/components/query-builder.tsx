@@ -97,7 +97,7 @@ const buildQueryString = (rules: QueryRule[]): string => {
     .join(' ');
 };
 
-export const QueryBuilder: React.FC<QueryBuilderProps> = ({ onSearch, isLoading, onRestore }) => {
+export const QueryBuilder: React.FC<QueryBuilderProps> = ({ onSearch, isLoading }) => {
   const [rules, setRules] = useState<QueryRule[]>([
     { id: generateId(), field: 'message', match: 'contains', value: '', operator: 'AND' },
   ]);

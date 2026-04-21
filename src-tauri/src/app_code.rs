@@ -2,8 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::sync::Mutex;
-use lazy_static::lazy_static;
+use std::sync::{Mutex, LazyLock};
 use chrono::Datelike;
 use tantivy::{
     collector::TopDocs,
@@ -14,39 +13,43 @@ use tantivy::{
 
 use tauri::{Emitter, Manager, State};
 
-lazy_static! {
-    static ref APACHE_PATTERN: regex::Regex = regex::Regex::new(
+static APACHE_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
         r#"^(?P<ip>\d+\.\d+\.\d+\.\d+)\s+\S+\s+\S+\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<method>\w+)\s+(?P<path>\S+)\s+\S+"\s+(?P<status>\d+)\s+(?P<size>\d+)"#
-    ).unwrap();
-}
+    ).unwrap()
+});
 
-lazy_static! {
-    static ref SYSLOG_PATTERN: regex::Regex = regex::Regex::new(
+static SYSLOG_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
         r"^(?P<timestamp>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<host>\S+)\s+(?P<app>\S+?)(?:\[(?P<pid>\d+)\])?:\s+(?P<message>.*)$"
-    ).unwrap();
-}
+    ).unwrap()
+});
 
-lazy_static! {
-    static ref GENERIC_PATTERN: regex::Regex = regex::Regex::new(
+static GENERIC_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
         r"^(?P<timestamp>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\s+(?P<level>DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|TRACE)\s*(?::\s*)?(?P<message>.*)$"
-    ).unwrap();
-}
+    ).unwrap()
+});
 
-lazy_static! {
-    static ref LEVEL_PATTERN: regex::Regex = regex::Regex::new(r"(?i)\b(DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|TRACE)\b").unwrap();
-}
+static LEVEL_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\b(DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|TRACE)\b").unwrap()
+});
 
-lazy_static! {
-    static ref TIMESTAMP_PATTERN: regex::Regex = regex::Regex::new(
+static TIMESTAMP_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
         r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
-    ).unwrap();
-}
+    ).unwrap()
+});
 
-lazy_static! {
-    static ref APACHE_TIMESTAMP_PATTERN: regex::Regex = regex::Regex::new(
+static APACHE_TIMESTAMP_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(
         r"(\d{2})/(\w{3})/(\d{4}):(\d{2}:\d{2}:\d{2})\s+([+-]\d{4})"
-    ).unwrap();
-}
+    ).unwrap()
+});
+
+static SYSLOG_SHORT_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"^(\w{3})\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})$").unwrap()
+});
 
 /// Normalize various timestamp formats to ISO 8601 for consistent indexing
 pub fn normalize_timestamp(ts: &str) -> Option<String> {
@@ -81,8 +84,7 @@ pub fn normalize_timestamp(ts: &str) -> Option<String> {
     }
 
     // Syslog format: Jan 15 10:30:01 (no year, assume current year)
-    let syslog_re = regex::Regex::new(r"^(\w{3})\s+(\d{1,2})\s+(\d{2}:\d{2}:\d{2})$").ok()?;
-    if let Some(caps) = syslog_re.captures(ts) {
+    if let Some(caps) = SYSLOG_SHORT_PATTERN.captures(ts) {
         let month_str = caps.get(1)?.as_str();
         let day = caps.get(2)?.as_str().parse::<u32>().ok()?;
         let time = caps.get(3)?.as_str();
@@ -301,10 +303,10 @@ fn init_index(app_handle: &tauri::AppHandle) -> Result<(Index, Schema, SchemaFie
     let timestamp_field = schema_builder.add_date_field("timestamp", FAST | STORED);
     let line_number_field = schema_builder.add_u64_field("line_number", FAST | STORED);
     let source_file_field = schema_builder.add_text_field("source_file", TEXT | STORED);
-    let source_ip_field = schema_builder.add_text_field("source_ip", STORED);
-    let status_code_field = schema_builder.add_text_field("status_code", STORED);
-    let request_path_field = schema_builder.add_text_field("request_path", STORED);
-    let source_format_field = schema_builder.add_text_field("source_format", STORED);
+    let source_ip_field = schema_builder.add_text_field("source_ip", STORED | FAST);
+    let status_code_field = schema_builder.add_text_field("status_code", STORED | FAST);
+    let request_path_field = schema_builder.add_text_field("request_path", STORED | FAST);
+    let source_format_field = schema_builder.add_text_field("source_format", STORED | FAST);
     let schema = schema_builder.build();
 
     let fields = SchemaFields {
@@ -325,6 +327,11 @@ fn init_index(app_handle: &tauri::AppHandle) -> Result<(Index, Schema, SchemaFie
         .map_err(|e| format!("Failed to get app data dir: {}", e))?
         .join("index_data");
 
+    // Clean directory for a fresh start
+    if index_dir.exists() {
+        let _ = std::fs::remove_dir_all(&index_dir);
+    }
+    
     std::fs::create_dir_all(&index_dir)
         .map_err(|e| format!("Failed to create index dir: {}", e))?;
 
@@ -348,13 +355,17 @@ pub async fn ingest_file(
         .canonicalize()
         .map_err(|e| format!("Invalid path: {}", e))?;
 
-    // Only allow files within user-accessible directories (not system dirs)
-    let blocked_prefixes = ["/etc/", "/usr/bin/", "/usr/sbin/", "/sys/", "/proc/"];
+    // Security: Only allow files within user-accessible directories (macOS allowlist)
+    let home_dir = app_handle.path().home_dir().map_err(|e| format!("Could not get home dir: {}", e))?;
+    let home_dir_str = home_dir.to_string_lossy();
     let path_str = canonical_path.to_string_lossy();
-    for prefix in &blocked_prefixes {
-        if path_str.starts_with(prefix) {
-            return Err(format!("Access denied: cannot read from restricted path"));
-        }
+    
+    let allowed = path_str.starts_with(&*home_dir_str) || 
+                  path_str.starts_with("/tmp/") || 
+                  path_str.starts_with("/var/log/");
+
+    if !allowed {
+        return Err("Access denied: path is not in an allowed directory (~/, /tmp/, /var/log/)".to_string());
     }
 
     if !canonical_path.exists() {
@@ -367,150 +378,130 @@ pub async fn ingest_file(
     }
 
     let file = File::open(&canonical_path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let metadata = file.metadata().map_err(|e| format!("Failed to get metadata: {}", e))?;
+    if metadata.len() > 500 * 1024 * 1024 {
+        return Err("File too large (> 500MB)".to_string());
+    }
+
+    // Initialize the search index
+    let (index, schema, fields) = init_index(&app_handle)?;
+    
+    // Update state
+    {
+        let mut index_guard = state.index.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+        let mut schema_guard = state.schema.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+        let mut fields_guard = state.fields.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+        *index_guard = Some(index.clone());
+        *schema_guard = Some(schema);
+        *fields_guard = Some(fields.clone());
+    }
+
+    let source_file_path = canonical_path.to_string_lossy().to_string();
     let reader = BufReader::new(file);
 
-    // Store file path for indexing
-    let source_file_path = canonical_path.to_string_lossy().to_string();
+    // Use spawn_blocking for CPU-intensive indexing and blocking I/O
+    let handle = tokio::task::spawn_blocking(move || {
+        let mut index_writer: IndexWriter = index
+            .writer(50_000_000)
+            .map_err(|e| format!("Failed to create index writer: {}", e))?;
 
-    // Initialize or reset index for new file ingestion
-    let mut index_guard = state.index.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut schema_guard = state.schema.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
-    let mut fields_guard = state.fields.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
+        let mut line_count = 0;
+        let mut entries_batch = Vec::with_capacity(500);
 
-    // Reset index for each new file to avoid cross-file contamination
-    if index_guard.is_some() {
-        // Drop the index directory contents and recreate
-        let index_dir = app_handle
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("Failed to get app data dir: {}", e))?
-            .join("index_data");
-        let _ = std::fs::remove_dir_all(&index_dir);
-        let _ = std::fs::create_dir_all(&index_dir);
-    }
+        for (i, line_result) in reader.lines().enumerate() {
+            let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
+            line_count = i + 1;
 
-    if index_guard.is_none() {
-        let (index, schema, fields) = init_index(&app_handle)?;
-        *index_guard = Some(index);
-        *schema_guard = Some(schema);
-        *fields_guard = Some(fields);
-    } else {
-        // Reinitialize the index for the new file
-        let (index, schema, fields) = init_index(&app_handle)?;
-        *index_guard = Some(index);
-        *schema_guard = Some(schema);
-        *fields_guard = Some(fields);
-    }
+            let mut log_entry = parse_log_line(&line, line_count);
+            log_entry.source_file = Some(source_file_path.clone());
 
-    let index = index_guard.as_ref().unwrap();
-    let fields = fields_guard.as_ref().unwrap();
+            // Add to batch for emission
+            entries_batch.push(log_entry.clone());
 
-    let mut index_writer: IndexWriter = index
-        .writer(50_000_000)
-        .map_err(|e| format!("Failed to create index writer: {}", e))?;
+            // Emit batch every 500 entries
+            if entries_batch.len() >= 500 {
+                app_handle.emit("log-stream-batch", &entries_batch)
+                    .map_err(|e| format!("Failed to emit batch: {}", e))?;
+                entries_batch.clear();
+            }
 
-    let message_field = fields.message;
-    let level_field = fields.level;
-    let timestamp_field = fields.timestamp;
-    let line_number_field = fields.line_number;
-    let source_file_field = fields.source_file;
-    let source_ip_field = fields.source_ip;
-    let status_code_field = fields.status_code;
-    let request_path_field = fields.request_path;
-    let source_format_field = fields.source_format;
+            // Add to index
+            let mut doc = TantivyDocument::default();
+            doc.add_text(fields.message, &log_entry.message);
 
-    let mut line_count = 0;
-    let mut emitted_count = 0;
-    const EMIT_BATCH_SIZE: usize = 100; // Security: batch emissions to prevent memory flood
+            if let Some(ref level) = log_entry.level {
+                doc.add_text(fields.level, level);
+            }
 
-    // Stream lines to frontend
-    for (i, line_result) in reader.lines().enumerate() {
-        let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
-        line_count = i + 1;
+            if let Some(ref timestamp_str) = log_entry.timestamp {
+                let indexed_ts = if let Ok(timestamp) = tantivy::time::OffsetDateTime::parse(
+                    timestamp_str,
+                    &tantivy::time::format_description::well_known::Rfc3339,
+                ) {
+                    Some(tantivy::DateTime::from_timestamp_secs(timestamp.unix_timestamp()))
+                } else {
+                    normalize_timestamp(timestamp_str)
+                        .and_then(|normalized| {
+                            tantivy::time::OffsetDateTime::parse(
+                                &normalized,
+                                &tantivy::time::format_description::well_known::Rfc3339,
+                            ).ok()
+                        })
+                        .map(|dt| tantivy::DateTime::from_timestamp_secs(dt.unix_timestamp()))
+                };
 
-        let mut log_entry = parse_log_line(&line, line_count);
-        log_entry.source_file = Some(source_file_path.clone());
+                if let Some(dt) = indexed_ts {
+                    doc.add_date(fields.timestamp, dt);
+                }
+            }
 
-        // Security: Batch emit events to prevent memory flood on large files
-        emitted_count += 1;
-        if emitted_count % EMIT_BATCH_SIZE == 0 || line_count % 1000 == 0 {
-            app_handle
-                .emit("log-stream", &log_entry)
-                .map_err(|e| format!("Failed to emit event: {}", e))?;
-        }
+            doc.add_u64(fields.line_number, line_count as u64);
+            doc.add_text(fields.source_file, &source_file_path);
 
-        // Add to index with all fields
-        let mut doc = TantivyDocument::default();
-        doc.add_text(message_field, &log_entry.message);
+            if let Some(ref ip) = log_entry.source_ip {
+                doc.add_text(fields.source_ip, ip);
+            }
+            if let Some(ref code) = log_entry.status_code {
+                doc.add_text(fields.status_code, code);
+            }
+            if let Some(ref path) = log_entry.request_path {
+                doc.add_text(fields.request_path, path);
+            }
+            if let Some(ref fmt) = log_entry.source {
+                doc.add_text(fields.source_format, fmt);
+            }
 
-        if let Some(ref level) = log_entry.level {
-            doc.add_text(level_field, level);
-        }
+            index_writer.add_document(doc)
+                .map_err(|e| format!("Failed to add document: {}", e))?;
 
-        if let Some(ref timestamp_str) = log_entry.timestamp {
-            // Try RFC3339 first, then normalize from other formats
-            let indexed_ts = if let Ok(timestamp) = tantivy::time::OffsetDateTime::parse(
-                timestamp_str,
-                &tantivy::time::format_description::well_known::Rfc3339,
-            ) {
-                Some(tantivy::DateTime::from_timestamp_secs(timestamp.unix_timestamp()))
-            } else {
-                // Try normalizing from Apache/Syslog formats to ISO 8601
-                normalize_timestamp(timestamp_str)
-                    .and_then(|normalized| {
-                        tantivy::time::OffsetDateTime::parse(
-                            &normalized,
-                            &tantivy::time::format_description::well_known::Rfc3339,
-                        ).ok()
-                    })
-                    .map(|dt| tantivy::DateTime::from_timestamp_secs(dt.unix_timestamp()))
-            };
-
-            if let Some(dt) = indexed_ts {
-                doc.add_date(timestamp_field, dt);
+            // Commit every 1000 lines
+            if line_count % 1000 == 0 {
+                index_writer.commit()
+                    .map_err(|e| format!("Failed to commit: {}", e))?;
             }
         }
 
-        doc.add_u64(line_number_field, line_count as u64);
-        doc.add_text(source_file_field, &source_file_path);
-
-        if let Some(ref ip) = log_entry.source_ip {
-            doc.add_text(source_ip_field, ip);
-        }
-        if let Some(ref code) = log_entry.status_code {
-            doc.add_text(status_code_field, code);
-        }
-        if let Some(ref path) = log_entry.request_path {
-            doc.add_text(request_path_field, path);
-        }
-        if let Some(ref fmt) = log_entry.source {
-            doc.add_text(source_format_field, fmt);
+        // Final emit for remaining entries
+        if !entries_batch.is_empty() {
+            app_handle.emit("log-stream-batch", &entries_batch)
+                .map_err(|e| format!("Failed to emit final batch: {}", e))?;
         }
 
-        index_writer
-            .add_document(doc)
-            .map_err(|e| format!("Failed to add document: {}", e))?;
+        index_writer.commit()
+            .map_err(|e| format!("Failed to commit final: {}", e))?;
 
-        // Commit every 1000 lines to manage memory
-        if line_count % 1000 == 0 {
-            index_writer
-                .commit()
-                .map_err(|e| format!("Failed to commit: {}", e))?;
-        }
-    }
+        Ok::<usize, String>(line_count)
+    });
 
-    // Final commit
-    index_writer
-        .commit()
-        .map_err(|e| format!("Failed to commit: {}", e))?;
-
-    Ok(line_count)
+    handle.await.map_err(|e| format!("Task panicked: {}", e))?
 }
 
 // Tauri command to search the index
 #[tauri::command]
 pub async fn search_index_cmd(
     query: String,
+    limit: Option<usize>,
+    offset: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<Vec<LogEntry>, String> {
     let index_guard = state.index.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
@@ -533,8 +524,11 @@ pub async fn search_index_cmd(
         .parse_query(&query)
         .map_err(|e| format!("Failed to parse query: {}", e))?;
 
+    let limit = limit.unwrap_or(100).min(5000);
+    let offset = offset.unwrap_or(0);
+
     let top_docs = searcher
-        .search(&query, &TopDocs::with_limit(100))
+        .search(&query, &TopDocs::with_limit(limit).and_offset(offset))
         .map_err(|e| format!("Failed to search: {}", e))?;
 
     let mut results = Vec::new();
@@ -613,13 +607,17 @@ pub async fn search_index_cmd(
 /// Tauri command to clear the search index
 #[tauri::command]
 pub fn clear_index(
+    app_handle: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut index_guard = state.index.lock().map_err(|e| format!("Lock poisoned: {}", e))?;
     *index_guard = None;
 
     // Clear the on-disk index
-    let index_dir = std::env::temp_dir().join("r-splunk-index");
+    let index_dir = app_handle.path().app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("index_data");
+    
     if index_dir.exists() {
         std::fs::remove_dir_all(&index_dir)
             .map_err(|e| format!("Failed to clear index: {}", e))?;

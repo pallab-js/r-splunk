@@ -18,12 +18,18 @@ export async function ingestFile(path: string): Promise<number> {
   return invoke<number>('ingest_file', { path });
 }
 
-export async function searchIndex(query: string): Promise<LogEntry[]> {
-  return invoke<LogEntry[]>('search_index_cmd', { query });
+export async function searchIndex(query: string, limit?: number, offset?: number): Promise<LogEntry[]> {
+  return invoke<LogEntry[]>('search_index_cmd', { query, limit, offset });
 }
 
 export async function onLogStream(callback: (entry: LogEntry) => void) {
   return listen<LogEntry>('log-stream', (event) => {
+    callback(event.payload);
+  });
+}
+
+export async function onLogStreamBatch(callback: (entries: LogEntry[]) => void) {
+  return listen<LogEntry[]>('log-stream-batch', (event) => {
     callback(event.payload);
   });
 }

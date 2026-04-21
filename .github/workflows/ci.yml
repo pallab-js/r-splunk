@@ -1,0 +1,56 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          
+      - name: Install Frontend Dependencies
+        run: npm install
+        
+      - name: Security Audit (npm)
+        run: npm audit --audit-level=high
+
+      - name: Frontend Lint & Test
+        run: |
+          npm run lint
+          npm test
+          
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+        
+      - name: Security Audit (Cargo)
+        run: |
+          cd src-tauri
+          cargo audit
+
+      - name: Rust Check & Test
+        run: |
+          cd src-tauri
+          cargo fmt -- --check
+          cargo clippy -- -D warnings
+          cargo test
